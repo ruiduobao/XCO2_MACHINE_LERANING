@@ -90,7 +90,7 @@ def read_all_bands_upper_left(file_path, window_size=1):
 
 # 示例用法
 if __name__ == "__main__":
-    dem_path =  r'E:\地理所\论文\中国XCO2论文_2025.04\数据\CLCD\原始数据_众数重采样_setnull\2018_CLCD_0_01deg_mode_NODATA9999.tif'
+    dem_path =  r'E:\地理所\论文\中国XCO2论文_2025.04\数据\人类足迹数据\原始数据\hfp2018.tif'
     
     try:
         # 1. 读取第一个波段的左上角值
