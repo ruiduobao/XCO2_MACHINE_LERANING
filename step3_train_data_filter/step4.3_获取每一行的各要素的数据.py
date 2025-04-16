@@ -2,6 +2,7 @@
 import pandas as pd
 import rasterio
 import os
+from tqdm import tqdm
 
 # 1. 加载 CSV 表格
 csv_path = 'E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\卫星数据\网格XCO2加权统计_按年月.csv'
@@ -41,7 +42,7 @@ monthly_types = ['UnixTime', 'VIIRS', 'ERA5Land', 'AOD', 'CT2019B', 'odiac1km', 
 types = list(type_to_folder.keys())  # 使用映射中的所有类型
 
 # 3. 遍历表格每一行，提取像素值
-for index, row in df.iterrows():
+for index, row in tqdm(df.iterrows()):
     year = row['year']
     month = row['month']
     X = int(row['X'])  # 确保 X 是整数（行列索引）
