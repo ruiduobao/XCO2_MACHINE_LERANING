@@ -90,7 +90,7 @@ def read_all_bands_upper_left(file_path, window_size=1):
 
 # 示例用法
 if __name__ == "__main__":
-    dem_path =  r"F:\河南耕地分区一遥感\Sentinel按月镶嵌NDVI\各个月镶嵌NDVI\"
+    dem_path =  r"E:\地理所\论文\中国XCO2论文_2025.04\数据\每月时间戳的栅格数据\UnixTime_2018_10.tif"
     
     try:
         # 1. 读取第一个波段的左上角值
