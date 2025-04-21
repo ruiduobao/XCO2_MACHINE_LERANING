@@ -23,10 +23,10 @@ LABEL_FILE = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格�
 MODEL_SAVE_PATH = r"E:\地理所\论文\中国XCO2论文_2025.04\处理结果\模型数据\ST_RESNET\st_resnet_xco2_pytorch_model.pth"
 # 训练参数
 BATCH_SIZE = 32
-EPOCHS = 10
+EPOCHS = 100
 LEARNING_RATE = 0.001
 EARLY_STOP_PATIENCE = 10
-TEST_SIZE = 0.05
+TEST_SIZE = 0.2
 RANDOM_STATE = 42
 
 # 数据类型映射

@@ -24,7 +24,7 @@ PREDICT_MONTH = 3
 # 标准栅格文件
 STANDARD_GRID_PATH = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\范围数据\标准栅格_WGS84.tif"
 # 输出预测结果TIF
-OUTPUT_TIF_PATH = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif_预测XCO2\预测xco2_st_resnet_pytorch_2018_03.tif"
+OUTPUT_TIF_PATH = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif_预测XCO2\预测xco2_st_resnet_pytorch_2018_03_epoch30.tif"
 # 批处理大小
 BATCH_SIZE = 1024
 # 并行线程数
