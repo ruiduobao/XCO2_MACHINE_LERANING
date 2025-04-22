@@ -5,8 +5,8 @@ import os
 
 # --- 配置 ---
 MODEL_PATH = r"xgboost_xco2_regression_model.json"# *修改为你实际的模型文件路径*
-PREDICTION_INPUT_FILE = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif\统计_2018_01.csv" # *修改为你要预测的表格路径*
-PREDICTION_OUTPUT_FILE = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif_预测XCO2\XGBOOST\统计_2018_01_predictions.csv" # *定义输出文件的路径和名称*
+PREDICTION_INPUT_FILE = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif\统计_2018_12.csv" # *修改为你要预测的表格路径*
+PREDICTION_OUTPUT_FILE = r"E:\地理所\论文\中国XCO2论文_2025.04\数据\训练表格数据\标准栅格数据\标准栅格XY_添加tif_预测XCO2\XGBOOST\统计_2018_12_predictions.csv" # *定义输出文件的路径和名称*
 
 # 需要从特征中排除的列名
 COLUMNS_TO_EXCLUDE = ['X', 'Y']
@@ -22,18 +22,16 @@ if __name__ == "__main__":
         print(f"错误: 模型文件未找到 {MODEL_PATH}")
         exit()
     try:
-        model = xgb.XGBRegressor() # 初始化一个空的模型对象
-        model.load_model(MODEL_PATH) # 加载训练好的模型参数
+        # 直接加载XGBoost原生模型，避免使用XGBRegressor包装器
+        booster = xgb.Booster()
+        booster.load_model(MODEL_PATH)
         print("模型加载成功。")
         # 提取模型训练时使用的特征名称 (非常重要)
-        expected_features = model.get_booster().feature_names
+        expected_features = booster.feature_names
         if not expected_features:
              print("警告：无法从模型中提取特征名称。请确保模型已正确保存。")
-             # 在这种情况下，你可能需要手动提供特征列表
-             # expected_features = ['year', 'month', 'Lantitude_band1', ...] # 手动列出所有特征
-             # if not expected_features: # 如果还是没有，就退出
-             #    print("错误：需要模型训练时的特征名称列表才能继续。")
-             #    exit()
+             # 在这种情况下，你需要手动提供特征列表
+             print("将尝试从预测数据中推断特征列表（除X和Y外）...")
         else:
              print(f"模型训练时使用了 {len(expected_features)} 个特征。")
              # print(f"预期的特征名称 (部分): {expected_features[:10]}...") # 打印前10个看看
@@ -76,19 +74,24 @@ if __name__ == "__main__":
     X_predict = prediction_data[potential_feature_cols].copy() # 使用 .copy() 避免警告
 
     # --- 关键步骤: 确保特征与模型训练时一致 ---
-    print(f"检查并对齐特征列与模型训练时的特征 ({len(expected_features)} 列)...")
+    if not expected_features:
+        # 如果模型没有提供特征名称，就使用数据中的所有列（除了排除列）
+        print("由于模型未提供特征名称，将使用所有可用列作为特征。")
+        expected_features = potential_feature_cols
+    else:
+        print(f"检查并对齐特征列与模型训练时的特征 ({len(expected_features)} 列)...")
 
-    # 检查是否有模型需要的特征在当前数据中缺失
-    missing_cols = set(expected_features) - set(X_predict.columns)
-    if missing_cols:
-        print(f"错误: 待预测数据中缺少模型需要的以下特征列: {missing_cols}")
-        print("请确保预测数据的列名与训练数据（除目标变量和排除列外）一致。")
-        exit()
+        # 检查是否有模型需要的特征在当前数据中缺失
+        missing_cols = set(expected_features) - set(X_predict.columns)
+        if missing_cols:
+            print(f"错误: 待预测数据中缺少模型需要的以下特征列: {missing_cols}")
+            print("请确保预测数据的列名与训练数据（除目标变量和排除列外）一致。")
+            exit()
 
-    # 检查是否有模型训练时未使用的额外特征（这些将被忽略）
-    extra_cols = set(X_predict.columns) - set(expected_features)
-    if extra_cols:
-        print(f"警告: 待预测数据中包含模型训练时未使用的额外列，这些列将被忽略: {extra_cols}")
+        # 检查是否有模型训练时未使用的额外特征（这些将被忽略）
+        extra_cols = set(X_predict.columns) - set(expected_features)
+        if extra_cols:
+            print(f"警告: 待预测数据中包含模型训练时未使用的额外列，这些列将被忽略: {extra_cols}")
 
     # 按模型训练时的顺序重新排序列，并只保留这些列
     try:
@@ -117,7 +120,9 @@ if __name__ == "__main__":
     # 4. 进行预测
     print("\n[4/5] 使用加载的模型进行预测...")
     try:
-        predicted_xco2 = model.predict(X_predict)
+        # 将数据转换为DMatrix格式（XGBoost的原生格式）以进行预测
+        dpredict = xgb.DMatrix(X_predict)
+        predicted_xco2 = booster.predict(dpredict)
         print(f"预测完成。共生成 {len(predicted_xco2)} 个预测值。")
     except Exception as e:
         print(f"预测过程中发生错误: {e}")

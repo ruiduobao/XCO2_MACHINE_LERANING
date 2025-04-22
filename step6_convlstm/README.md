@@ -130,3 +130,98 @@ In Advances in Neural Information Processing Systems (pp. 802-810).
 ## License
 
 This project is open source and available under the [MIT License](LICENSE). 
+
+
+
+# Understanding the ConvLSTM Model for XCO2 Prediction
+
+The codebase implements a Convolutional LSTM (ConvLSTM) model for predicting XCO2 (carbon dioxide concentration) in a spatio-temporal context. Here's a detailed breakdown:
+
+## 1. Model Architecture
+
+The model is defined in `model.py` and consists of:
+
+### Core Components:
+- **ConvLSTMCell**: A basic cell combining convolutional operations with LSTM gates
+- **ConvLSTM**: A multi-layer ConvLSTM network that processes sequences of spatial data
+- **XCO2ConvLSTM**: The complete model architecture that combines:
+  - ConvLSTM encoder for capturing spatio-temporal dynamics
+  - Dropout and batch normalization for regularization
+  - Convolutional decoder for transforming hidden states to predicted XCO2 maps
+
+### Key Architecture Details:
+- The model takes input tensor of shape `(batch_size, seq_len, channels, height, width)`
+- Processes through multiple ConvLSTM layers with specified hidden dimensions
+- Uses the hidden state from the last time step as input to the decoder
+- The decoder reduces the number of channels through convolutional layers to output a single-channel XCO2 prediction
+
+## 2. Data Processing Flow
+
+### Input Data:
+- **XCO2 Data**: Primary time-series of XCO2 maps
+- **Auxiliary Data** (optional): Additional features like:
+  - Geographic: Latitude, Longitude, DEM, slope, aspect
+  - Environmental: ERA5Land, AOD, NDVI
+  - Human activity: VIIRS, landscan, human footprint, CLCD, MODIS landcover
+  - Other CO2 sources: CAMS, carbon tracer, ODIAC
+
+### Data Loading and Processing:
+- `data_loader.py` contains the data processing pipeline:
+  - **XCO2SequenceDataset**: Handles basic XCO2 sequence data
+  - **XCO2WithAuxDataset**: Enhances sequences with auxiliary features
+  - Functions for listing, loading, and normalizing TIF files
+  - Creating sequences of appropriate length from the time series
+
+### Sequence Creation:
+- The model uses a sliding window approach to create training sequences
+- Each sequence consists of multiple consecutive time steps (e.g., 6 months)
+- The target is the XCO2 map for the time step immediately following the sequence
+
+## 3. Training Process
+
+The training process in `train.py` follows these steps:
+
+1. **Parse Arguments**: Set model parameters, data paths, and training settings
+2. **Load Data**: Create training and validation sequences and dataloaders
+3. **Initialize Model**: Create a ConvLSTM model with specified parameters
+4. **Train Model**:
+   - Loop through epochs and batches
+   - Calculate loss using MSE between predictions and targets
+   - Backpropagate and update model parameters
+   - Validate on validation set
+   - Apply learning rate scheduling and early stopping
+5. **Save Results**: Save the best model, training history, and visualizations
+
+## 4. Prediction Process
+
+The prediction workflow in `predict.py` includes:
+
+1. **Load Model**: Load a trained model with weights from a specified path
+2. **Prepare Input Sequence**: Create a sequence from historical data
+3. **Generate Predictions**: Two prediction modes:
+   - **Single-step prediction**: Predict the next time step
+   - **Multi-step prediction**: Iteratively predict multiple future time steps
+4. **Post-processing**: Denormalize predictions to original value range
+5. **Save Results**: Save predictions as GeoTIFF files and optionally visualize them
+
+## 5. Key Features and Innovations
+
+- **Spatio-temporal Modeling**: Captures both spatial patterns and temporal dynamics
+- **Multi-scale Feature Learning**: Through ConvLSTM with different hidden dimensions
+- **Auxiliary Data Integration**: Can incorporate multiple data sources beyond XCO2
+- **Flexible Configuration**: Customizable parameters for model architecture and training
+- **Visualization Tools**: Functions to visualize predictions and training history
+
+## 6. Usage Example
+
+To train a model:
+```
+python -m step6_convlstm.train --data_dir [XCO2_DIR] --aux_data --sequence_length 6 --hidden_dims 32 64 --epochs 50
+```
+
+To make predictions:
+```
+python -m step6_convlstm.predict --model_path [MODEL_PATH] --data_dir [XCO2_DIR] --aux_data --start_date 2020-12 --num_steps 12
+```
+
+The ConvLSTM model offers a sophisticated approach to XCO2 prediction by capturing the complex spatio-temporal patterns in carbon dioxide concentration. Its ability to incorporate auxiliary data makes it particularly powerful for understanding the relationship between XCO2 and various environmental and human factors.

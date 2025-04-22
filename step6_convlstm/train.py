@@ -239,10 +239,14 @@ def main():
         train_dataset = XCO2WithAuxDataset(train_sequences, aux_dirs, input_size=args.input_size)
         val_dataset = XCO2WithAuxDataset(val_sequences, aux_dirs, input_size=args.input_size) if val_sequences else None
         # Determine input_channels by getting the shape of the first item
+        # Determine input_channels by getting the shape of the first item
         if len(train_dataset) > 0:
             sample_input, _ = train_dataset[0]
-            input_channels = sample_input.shape[2]  # channels dimension
-            print(f"Input shape: {sample_input.shape} (sequence_length, channels, height, width)")
+            # 正确获取通道维度，输入形状应该是 [sequence_length, channels, height, width]
+            print(f"Sample input shape: {sample_input.shape}")
+            
+            # 确保正确获取通道维度
+            input_channels = sample_input.shape[1]  # 应该是第二个维度，而不是第三个
             print(f"Using {input_channels} input channels")
         else:
             input_channels = 1  # Default if dataset is empty

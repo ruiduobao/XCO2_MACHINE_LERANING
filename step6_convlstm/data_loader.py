@@ -270,6 +270,10 @@ def create_auxiliary_input(xco2_file, auxiliary_dirs, auxiliary_patterns=None):
     Returns:
         numpy.ndarray: Array with shape [channels, height, width] containing auxiliary data
     """
+    # Initialize auxiliary_patterns to empty dict if None
+    if auxiliary_patterns is None:
+        auxiliary_patterns = {}
+        
     # Extract year and month from XCO2 filename
     filename = os.path.basename(xco2_file)
     try:
