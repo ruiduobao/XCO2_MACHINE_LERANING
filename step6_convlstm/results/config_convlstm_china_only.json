@@ -1,0 +1,25 @@
+{
+    "data_dir": "E:\\\u5730\u7406\u6240\\\u8bba\u6587\\\u4e2d\u56fdXCO2\u8bba\u6587_2025.04\\\u6570\u636e\\XGBOOST_XCO2",
+    "aux_data": true,
+    "input_size": null,
+    "sequence_length": 3,
+    "years_range": [
+        2015,
+        2021
+    ],
+    "mask_file": "E:\\\u5730\u7406\u6240\\\u8bba\u6587\\\u4e2d\u56fdXCO2\u8bba\u6587_2025.04\\\u6570\u636e\\\u8303\u56f4\u6570\u636e\\\u6807\u51c6\u6805\u683c_WGS84.tif",
+    "hidden_dims": [
+        32,
+        64
+    ],
+    "kernel_size": 3,
+    "dropout": 0.2,
+    "batch_size": 2,
+    "lr": 0.001,
+    "epochs": 2,
+    "patience": 10,
+    "val_split": 0.2,
+    "gpu": 0,
+    "output_dir": "./results",
+    "experiment_name": "convlstm_china_only"
+}

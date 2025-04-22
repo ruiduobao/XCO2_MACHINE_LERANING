@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torch.cuda.amp import autocast, GradScaler
+from tqdm import tqdm, trange
 
 class ConvLSTMCell(nn.Module):
     """
@@ -157,19 +159,19 @@ class ConvLSTM(nn.Module):
         if input_tensor.dim() != 5:
             raise ValueError(f"Expected 5D input (got {input_tensor.dim()}D input)")
         
-        # If batch_first, transpose to seq_first for internal calculations
+        # 1) 先从输入 shape 拆 batch 和 seq，再做 permute
         if self.batch_first:
+            batch_size, seq_len, _, h, w = input_tensor.size()
+            # 转到 (t, b, c, h, w) 形式
             input_tensor = input_tensor.permute(1, 0, 2, 3, 4)
-            # Now input_tensor is (t, b, c, h, w)
-            
-        # Get dimensions
-        b, _, _, h, w = input_tensor.size()
-        seq_len = input_tensor.size(0)
+        else:
+            seq_len, batch_size, _, h, w = input_tensor.size()
         
-        # Initialize hidden states if not provided
+        # 2) 初始化 hidden state
         if hidden_state is None:
-            hidden_state = self._init_hidden(batch_size=b, height=h, width=w)
-            
+            hidden_state = self._init_hidden(batch_size=batch_size,
+                                             height=h, width=w)
+        
         layer_output_list = []
         last_state_list = []
         
@@ -353,6 +355,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,
     """
     # Move model to device
     model = model.to(device)
+    scaler = GradScaler()
     
     # Training history
     history = {
@@ -363,13 +366,25 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,
     }
     
     # Train for the specified number of epochs
-    for epoch in range(num_epochs):
+    for epoch in trange(num_epochs, desc="Epochs"):
+        print(f"Epoch {epoch+1}/{num_epochs}")
+        
         # Set model to training mode
         model.train()
         train_loss = 0.0
+        train_batches = 0
         
         # Training loop
-        for batch_idx, (inputs, targets) in enumerate(train_loader):
+        for batch_idx, batch_data in enumerate(tqdm(train_loader, desc="  Train", leave=False)):
+            # Check if batch contains masks
+            if len(batch_data) == 3:
+                inputs, targets, masks = batch_data
+                masks = masks.to(device)
+                has_masks = True
+            else:
+                inputs, targets = batch_data
+                has_masks = False
+            
             # Move data to device
             inputs, targets = inputs.to(device), targets.to(device)
             
@@ -377,17 +392,40 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,
             optimizer.zero_grad()
             
             # Forward pass
-            outputs = model(inputs)
-            
-            # Calculate loss
-            loss = criterion(outputs, targets)
+            with autocast():
+                outputs = model(inputs)
+                
+                # Apply mask if available to compute loss only on valid regions
+                if has_masks:
+                    # Expand mask to match target shape if needed
+                    if masks.shape != targets.shape:
+                        masks = masks.unsqueeze(1).expand_as(targets)
+                    
+                    # Mask both predictions and targets
+                    masked_outputs = outputs * masks
+                    masked_targets = targets * masks
+                    
+                    # Compute loss only on valid pixels
+                    # Get count of valid pixels for normalization
+                    valid_pixels = masks.sum().item()
+                    if valid_pixels > 0:
+                        # Use MSE manually to control normalization
+                        loss = torch.sum(((masked_outputs - masked_targets) ** 2)) / valid_pixels
+                    else:
+                        # Fall back to regular loss if no valid pixels
+                        loss = criterion(outputs, targets)
+                else:
+                    # Regular loss computation (all pixels)
+                    loss = criterion(outputs, targets)
             
             # Backward pass and optimize
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             
             # Accumulate loss
             train_loss += loss.item()
+            train_batches += 1
             
             # Print progress
             if (batch_idx + 1) % 10 == 0:
@@ -395,21 +433,54 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,
                       f'Loss: {loss.item():.4f}')
         
         # Calculate average training loss for the epoch
-        train_loss /= len(train_loader)
+        train_loss /= train_batches
         history['train_loss'].append(train_loss)
         
         # Validation
         val_loss = 0.0
+        val_batches = 0
         model.eval()
         with torch.no_grad():
-            for inputs, targets in val_loader:
+            for batch_data in tqdm(val_loader, desc="  Val", leave=False):
+                # Check if batch contains masks
+                if len(batch_data) == 3:
+                    inputs, targets, masks = batch_data
+                    masks = masks.to(device)
+                    has_masks = True
+                else:
+                    inputs, targets = batch_data
+                    has_masks = False
+                
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
-                loss = criterion(outputs, targets)
+                
+                # Apply mask if available to compute loss only on valid regions
+                if has_masks:
+                    # Expand mask to match target shape if needed
+                    if masks.shape != targets.shape:
+                        masks = masks.unsqueeze(1).expand_as(targets)
+                    
+                    # Mask both predictions and targets
+                    masked_outputs = outputs * masks
+                    masked_targets = targets * masks
+                    
+                    # Compute loss only on valid pixels
+                    valid_pixels = masks.sum().item()
+                    if valid_pixels > 0:
+                        # Use MSE manually to control normalization
+                        loss = torch.sum(((masked_outputs - masked_targets) ** 2)) / valid_pixels
+                    else:
+                        # Fall back to regular loss if no valid pixels
+                        loss = criterion(outputs, targets)
+                else:
+                    # Regular loss computation (all pixels)
+                    loss = criterion(outputs, targets)
+                
                 val_loss += loss.item()
+                val_batches += 1
         
         # Calculate average validation loss
-        val_loss /= len(val_loader)
+        val_loss /= val_batches
         history['val_loss'].append(val_loss)
         
         # Print epoch summary
@@ -433,6 +504,13 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,
         if early_stopping is not None and early_stopping(val_loss):
             print(f"Early stopping at epoch {epoch+1}")
             break
+        
+        # 清空 CPU cache & GPU cache，避免累积占用
+        if hasattr(train_loader.dataset, 'cache'):
+            train_loader.dataset.cache.clear()
+        if val_loader and hasattr(val_loader.dataset, 'cache'):
+            val_loader.dataset.cache.clear()
+        torch.cuda.empty_cache()
     
     return history
 

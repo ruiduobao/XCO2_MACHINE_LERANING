@@ -18,7 +18,9 @@ from step6_convlstm.model import XCO2ConvLSTM, train_model, predict_next_step, E
 
 def parse_args():
     """
-    Parse command line arguments.
+    解析命令行参数
+    
+    包含数据参数、模型参数、训练参数和输出参数
     """
     parser = argparse.ArgumentParser(description='Train ConvLSTM model for XCO2 prediction')
     
@@ -33,6 +35,8 @@ def parse_args():
                         help='Length of input sequences (in months)')
     parser.add_argument('--years_range', type=int, nargs=2, default=[2015, 2021],
                         help='Range of years to use for training, e.g., --years_range 2015 2021')
+    parser.add_argument('--mask_file', type=str, default=r'E:\地理所\论文\中国XCO2论文_2025.04\数据\范围数据\标准栅格_WGS84.tif',
+                        help='Mask file defining valid regions (like China boundary)')
     
     # Model parameters
     parser.add_argument('--hidden_dims', type=int, nargs='+', default=[32, 64],
@@ -66,10 +70,10 @@ def parse_args():
 
 def setup_auxiliary_data_dirs():
     """
-    Setup directories for auxiliary data.
+    设置辅助数据目录
     
-    Returns:
-        dict: Dictionary mapping feature names to directories
+    返回:
+        dict: 特征名称到目录的映射字典
     """
     root_dir = r'E:\地理所\论文\中国XCO2论文_2025.04\数据'
     
@@ -77,51 +81,66 @@ def setup_auxiliary_data_dirs():
     aux_dirs = {
         'Lantitude': os.path.join(root_dir, '纬度栅格'),
         'Longtitude': os.path.join(root_dir, '经度栅格'),
-        'UnixTime': os.path.join(root_dir, '每月时间戳的栅格数据'),
-        'aspect': os.path.join(root_dir, '坡向数据'),
-        'slope': os.path.join(root_dir, '坡度数据'),
-        'DEM': os.path.join(root_dir, 'DEM'),
-        'VIIRS': os.path.join(root_dir, '夜光遥感'),
+        # 'UnixTime': os.path.join(root_dir, '每月时间戳的栅格数据'),
+        # 'aspect': os.path.join(root_dir, '坡向数据'),
+        # 'slope': os.path.join(root_dir, '坡度数据'),
+        # 'DEM': os.path.join(root_dir, 'DEM'),
+        # 'VIIRS': os.path.join(root_dir, '夜光遥感'),
         'ERA5Land': os.path.join(root_dir, 'ERA5'),
-        'AOD': os.path.join(root_dir, '气溶胶厚度'),
+        # 'AOD': os.path.join(root_dir, '气溶胶厚度'),
         'CT2019B': os.path.join(root_dir, 'carbon_tracer'),
         'landscan': os.path.join(root_dir, 'landscan'),
-        'odiac1km': os.path.join(root_dir, 'odiac'),
-        'humanfootprint': os.path.join(root_dir, '人类足迹数据'),
+        # 'odiac1km': os.path.join(root_dir, 'odiac'),
+        # 'humanfootprint': os.path.join(root_dir, '人类足迹数据'),
         'OCO2GEOS': os.path.join(root_dir, 'OCO2_GEOS_XCO2同化数据'),
         'CAMStcco2': os.path.join(root_dir, 'CAMS'),
-        'CLCD': os.path.join(root_dir, 'CLCD'),
+        # 'CLCD': os.path.join(root_dir, 'CLCD'),
         'MODISLANDCOVER': os.path.join(root_dir, 'modis_landcover'),
-        'MOD13A2': os.path.join(root_dir, 'NDVI')
+        # 'MOD13A2': os.path.join(root_dir, 'NDVI')
     }
     
     return aux_dirs
 
 def visualize_prediction(model, val_loader, device, output_dir, experiment_name=None):
     """
-    Generate and save sample predictions for visual inspection.
+    生成并保存样本预测结果用于视觉检查
     
-    Args:
-        model (nn.Module): Trained model
-        val_loader (DataLoader): Validation data loader
-        device: Device to run prediction on
-        output_dir (str): Directory to save visualizations
-        experiment_name (str): Optional name for the output file
+    参数:
+        model (nn.Module): 训练好的模型
+        val_loader (DataLoader): 验证数据加载器
+        device: 运行预测的设备
+        output_dir (str): 保存可视化结果的目录
+        experiment_name (str): 输出文件的可选名称
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
     # Get a sample batch from the validation loader
-    inputs, targets = next(iter(val_loader))
+    batch_data = next(iter(val_loader))
+    
+    # Check if batch contains masks
+    if len(batch_data) == 3:
+        inputs, targets, masks = batch_data
+        has_mask = True
+    else:
+        inputs, targets = batch_data
+        has_mask = False
     
     # Select a random sample from the batch
     sample_idx = np.random.randint(inputs.shape[0])
     sample_input = inputs[sample_idx:sample_idx+1].to(device)  # Add batch dimension back
     sample_target = targets[sample_idx].squeeze().cpu().numpy()
     
+    if has_mask:
+        sample_mask = masks[sample_idx].cpu().numpy()
+    
     # Generate prediction
     with torch.no_grad():
         sample_output = model(sample_input).squeeze().cpu().numpy()
+    
+    # Create a custom colormap that makes NoData values transparent
+    cmap = plt.cm.get_cmap('viridis').copy()
+    cmap.set_bad('white', alpha=0)
     
     # Visualize the last input, target, and prediction
     plt.figure(figsize=(15, 5))
@@ -129,19 +148,34 @@ def visualize_prediction(model, val_loader, device, output_dir, experiment_name=
     # Plot last input frame
     plt.subplot(131)
     plt.title('Last Input Frame')
-    plt.imshow(sample_input[0, -1, 0].cpu().numpy(), cmap='viridis')
+    if has_mask:
+        # Create masked array with invalid areas marked
+        last_input_masked = np.ma.array(sample_input[0, -1, 0].cpu().numpy(), mask=~sample_mask)
+        plt.imshow(last_input_masked, cmap=cmap)
+    else:
+        plt.imshow(sample_input[0, -1, 0].cpu().numpy(), cmap='viridis')
     plt.colorbar(label='XCO2')
     
     # Plot target
     plt.subplot(132)
     plt.title('Target')
-    plt.imshow(sample_target, cmap='viridis')
+    if has_mask:
+        # Create masked array with invalid areas marked
+        target_masked = np.ma.array(sample_target, mask=~sample_mask)
+        plt.imshow(target_masked, cmap=cmap)
+    else:
+        plt.imshow(sample_target, cmap='viridis')
     plt.colorbar(label='XCO2')
     
     # Plot prediction
     plt.subplot(133)
     plt.title('Prediction')
-    plt.imshow(sample_output, cmap='viridis')
+    if has_mask:
+        # Create masked array with invalid areas marked
+        output_masked = np.ma.array(sample_output, mask=~sample_mask)
+        plt.imshow(output_masked, cmap=cmap)
+    else:
+        plt.imshow(sample_output, cmap='viridis')
     plt.colorbar(label='XCO2')
     
     # Save figure
@@ -154,12 +188,12 @@ def visualize_prediction(model, val_loader, device, output_dir, experiment_name=
 
 def plot_training_history(history, output_dir, experiment_name=None):
     """
-    Plot training and validation loss curves.
+    绘制训练和验证损失曲线
     
-    Args:
-        history (dict): Training history dictionary
-        output_dir (str): Directory to save the plot
-        experiment_name (str): Optional name for the output file
+    参数:
+        history (dict): 训练历史字典
+        output_dir (str): 保存图表的目录
+        experiment_name (str): 输出文件的可选名称
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -192,6 +226,24 @@ def plot_training_history(history, output_dir, experiment_name=None):
     print(f"Training history plot saved to {os.path.join(output_dir, filename)}")
 
 def main():
+    """
+    主函数，包含:
+    1. 解析参数
+    2. 设置实验名称和输出目录
+    3. 设置设备(GPU/CPU)
+    4. 设置辅助数据目录
+    5. 列出和排序 XCO2 文件
+    6. 创建序列
+    7. 分割训练和验证集
+    8. 创建数据集和数据加载器
+    9. 创建模型
+    10. 定义损失函数、优化器和学习率调度器
+    11. 训练模型
+    12. 绘制训练历史
+    13. 加载最佳模型
+    14. 可视化预测结果
+    15. 保存最终模型和实验配置
+    """
     # Parse command line arguments
     args = parse_args()
     
@@ -212,6 +264,13 @@ def main():
     
     # Set up auxiliary data directories if needed
     aux_dirs = setup_auxiliary_data_dirs() if args.aux_data else None
+    
+    # Check if mask file exists
+    if args.mask_file and not os.path.exists(args.mask_file):
+        print(f"Warning: Mask file {args.mask_file} does not exist. Training will proceed without masking.")
+        args.mask_file = None
+    elif args.mask_file:
+        print(f"Using mask file: {args.mask_file}")
     
     # List and sort XCO2 files
     xco2_files = list_xco2_files(args.data_dir, args.years_range)
@@ -236,12 +295,16 @@ def main():
     # Create datasets and dataloaders
     if args.aux_data:
         print("Using auxiliary data features")
-        train_dataset = XCO2WithAuxDataset(train_sequences, aux_dirs, input_size=args.input_size)
-        val_dataset = XCO2WithAuxDataset(val_sequences, aux_dirs, input_size=args.input_size) if val_sequences else None
+        train_dataset = XCO2WithAuxDataset(train_sequences, aux_dirs, input_size=args.input_size, mask_file=args.mask_file)
+        val_dataset = XCO2WithAuxDataset(val_sequences, aux_dirs, input_size=args.input_size, mask_file=args.mask_file) if val_sequences else None
         # Determine input_channels by getting the shape of the first item
         # Determine input_channels by getting the shape of the first item
         if len(train_dataset) > 0:
-            sample_input, _ = train_dataset[0]
+            sample_data = train_dataset[0]
+            if len(sample_data) == 3:  # Contains mask
+                sample_input, _, _ = sample_data
+            else:
+                sample_input, _ = sample_data
             # 正确获取通道维度，输入形状应该是 [sequence_length, channels, height, width]
             print(f"Sample input shape: {sample_input.shape}")
             
@@ -254,8 +317,8 @@ def main():
         # Use standard dataset with just XCO2
         print("Using only XCO2 data (no auxiliary features)")
         from step6_convlstm.data_loader import XCO2SequenceDataset
-        train_dataset = XCO2SequenceDataset(train_sequences, input_size=args.input_size)
-        val_dataset = XCO2SequenceDataset(val_sequences, input_size=args.input_size) if val_sequences else None
+        train_dataset = XCO2SequenceDataset(train_sequences, input_size=args.input_size, mask_file=args.mask_file)
+        val_dataset = XCO2SequenceDataset(val_sequences, input_size=args.input_size, mask_file=args.mask_file) if val_sequences else None
         input_channels = 1
     
     # Create dataloaders

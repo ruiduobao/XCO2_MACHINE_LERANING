@@ -10,15 +10,15 @@ from torch.utils.data import Dataset, DataLoader
 
 def list_xco2_files(root_dir, years_range=None, pattern="*_XGBOOST_XCO2.tif"):
     """
-    List all XCO2 TIF files from the specified directory that match the pattern.
+    列出指定目录中匹配模式的所有 XCO2 TIF 文件
     
-    Args:
-        root_dir (str): Directory containing XCO2 TIF files
-        years_range (tuple): Optional tuple of (start_year, end_year) to filter files
-        pattern (str): File pattern to match
+    参数:
+        root_dir (str): 包含 XCO2 TIF 文件的目录
+        years_range (tuple): 可选的 (start_year, end_year) 元组用于过滤文件
+        pattern (str): 匹配的文件模式
         
-    Returns:
-        list: Sorted list of file paths
+    返回:
+        list: 排序好的文件路径列表
     """
     all_files = glob(os.path.join(root_dir, pattern))
     
@@ -46,55 +46,70 @@ def list_xco2_files(root_dir, years_range=None, pattern="*_XGBOOST_XCO2.tif"):
     dated_files.sort(key=lambda x: x[0])
     return [f[1] for f in dated_files]
 
-def load_tif_file(file_path, normalize=True):
+def load_tif_file(file_path, normalize=True, preserve_mask=False):
     """
-    Load a GeoTIFF file as a numpy array.
+    将 GeoTIFF 文件加载为 numpy 数组
     
-    Args:
-        file_path (str): Path to TIF file
-        normalize (bool): Whether to normalize data to [0,1] range
+    参数:
+        file_path (str): TIF 文件路径
+        normalize (bool): 是否将数据归一化到 [0,1] 范围
+        preserve_mask (bool): 是否返回有效数据的掩膜
         
-    Returns:
-        tuple: (data_array, profile) where profile contains metadata
+    返回:
+        tuple: 如果 preserve_mask=False: (data_array, profile)
+               如果 preserve_mask=True: (data_array, valid_mask, profile)
     """
     with rasterio.open(file_path) as src:
         data = src.read(1)  # Read first band
         profile = src.profile.copy()
         
-        # Replace NoData values with NaN
+        # 创建有效数据掩膜 (True=有效, False=无效)
+        valid_mask = np.ones_like(data, dtype=bool)
+        
+        # 标记NoData值
         if src.nodata is not None:
             data = data.astype(np.float32)
-            data[data == src.nodata] = np.nan
+            valid_mask = data != src.nodata
+            data[~valid_mask] = np.nan
             
-        # Handle any additional common NoData values
-        data[data == -9999] = np.nan
+        # 处理额外的常见NoData值
+        additional_nodata_mask = data == -9999
+        valid_mask = valid_mask & ~additional_nodata_mask
+        data[additional_nodata_mask] = np.nan
         
-        # Simple normalization if requested
+        # 简单归一化（如果需要）
         if normalize and not np.all(np.isnan(data)):
-            # Compute stats ignoring NaN values
             valid_data = data[~np.isnan(data)]
             if len(valid_data) > 0:
-                min_val = np.nanmin(data)
-                max_val = np.nanmax(data)
-                if max_val > min_val:
-                    data = (data - min_val) / (max_val - min_val)
+                min_val = np.min(valid_data)
+                max_val = np.max(valid_data)
+                if max_val > min_val:  # 确保分母不为零
+                    data = np.where(~np.isnan(data), (data - min_val) / (max_val - min_val), np.nan)
+                else:
+                    # 如果数据无变化，则有效区域设为零，无效区域保持为NaN
+                    data = np.where(~np.isnan(data), 0, np.nan)
                     
-        # Replace NaN values with 0 after normalization
-        data = np.nan_to_num(data, nan=0.0)
-            
-    return data, profile
+        # 如果不需要保留掩膜，则按照之前的逻辑将NaN替换为0
+        if not preserve_mask:
+            data = np.nan_to_num(data, nan=0.0)
+            return data, profile
+        else:
+            # 返回数据、掩膜和配置信息
+            # 将NaN值替换为0，但同时返回掩膜以便后续处理
+            masked_data = np.nan_to_num(data, nan=0.0)
+            return masked_data, ~np.isnan(data), profile
 
 def create_sequence_data(file_list, sequence_length, stride=1):
     """
-    Create sequences from list of files for ConvLSTM training.
+    从文件列表创建 ConvLSTM 训练用的序列
     
-    Args:
-        file_list (list): List of TIF file paths
-        sequence_length (int): Length of sequences to create
-        stride (int): Stride between sequences
+    参数:
+        file_list (list): TIF 文件路径列表
+        sequence_length (int): 要创建的序列长度
+        stride (int): 序列之间的步长
         
-    Returns:
-        list: List of sequences where each sequence is a list of file paths
+    返回:
+        list: 序列列表，每个序列是文件路径的列表
     """
     sequences = []
     
@@ -106,25 +121,25 @@ def create_sequence_data(file_list, sequence_length, stride=1):
 
 def load_satellite_validation_data(csv_path):
     """
-    Load satellite XCO2 validation data from CSV file.
+    从 CSV 文件加载卫星 XCO2 验证数据
     
-    Args:
-        csv_path (str): Path to CSV file with validation data
+    参数:
+        csv_path (str): 包含验证数据的 CSV 文件路径
         
-    Returns:
-        pd.DataFrame: DataFrame containing validation data
+    返回:
+        pd.DataFrame: 包含验证数据的 DataFrame
     """
     return pd.read_csv(csv_path)
 
 class XCO2SequenceDataset(Dataset):
     """
-    Dataset for XCO2 sequences.
+    XCO2 序列数据集
     
-    For each sequence:
-    - X is a tensor of shape [sequence_length, channels, height, width]
-    - y is the target tensor of shape [1, height, width] for the next time step
+    对于每个序列:
+    - X 是形状为 [sequence_length, channels, height, width] 的张量
+    - y 是形状为 [1, height, width] 的下一个时间步的目标张量
     """
-    def __init__(self, sequences, target_files=None, input_size=None, transform=None):
+    def __init__(self, sequences, target_files=None, input_size=None, transform=None, mask_file=None):
         """
         Initialize the dataset.
         
@@ -133,14 +148,23 @@ class XCO2SequenceDataset(Dataset):
             target_files (list): Optional list of target file paths
             input_size (tuple): Optional (height, width) to resize inputs
             transform: Optional transform to apply to loaded data
+            mask_file (str): Optional path to a mask file defining valid regions
         """
         self.sequences = sequences
         self.target_files = target_files  # If None, use next file after sequence
         self.input_size = input_size
         self.transform = transform
+        self.mask_file = mask_file
         
         # Cache for loaded data to improve performance
         self.cache = {}
+        
+        # Load mask if provided
+        self.region_mask = None
+        if mask_file is not None and os.path.exists(mask_file):
+            with rasterio.open(mask_file) as src:
+                mask_data = src.read(1)
+                self.region_mask = mask_data == 1  # 值为1的区域被视为有效
     
     def __len__(self):
         return len(self.sequences)
@@ -150,19 +174,39 @@ class XCO2SequenceDataset(Dataset):
         
         # Load sequence data (X)
         sequence_data = []
+        sequence_masks = []
         for file_path in sequence:
             if file_path in self.cache:
-                data = self.cache[file_path]
+                if isinstance(self.cache[file_path], tuple) and len(self.cache[file_path]) == 2:
+                    data, mask = self.cache[file_path]
+                else:
+                    data = self.cache[file_path]
+                    mask = None
             else:
-                data, _ = load_tif_file(file_path)
-                self.cache[file_path] = data
+                if self.region_mask is not None:
+                    data, mask, _ = load_tif_file(file_path, normalize=True, preserve_mask=True)
+                    # Combine with region mask if available
+                    mask = np.logical_and(mask, self.region_mask) if mask is not None else self.region_mask
+                    self.cache[file_path] = (data, mask)
+                else:
+                    data, _ = load_tif_file(file_path, normalize=True)
+                    mask = None
+                    self.cache[file_path] = data
+            
             sequence_data.append(data)
+            if mask is not None:
+                sequence_masks.append(mask)
         
         # Stack into a single array [sequence_length, height, width]
         X = np.stack(sequence_data)
         
         # Add channel dimension to get [sequence_length, channels, height, width]
         X = X[:, np.newaxis, :, :]
+        
+        # Create combined mask if we have masks
+        combined_mask = None
+        if sequence_masks:
+            combined_mask = np.logical_and.reduce(sequence_masks)
         
         # Determine target (y)
         if self.target_files is not None:
@@ -185,10 +229,27 @@ class XCO2SequenceDataset(Dataset):
         
         # Load target data
         if target_file in self.cache:
-            target_data = self.cache[target_file]
+            if isinstance(self.cache[target_file], tuple) and len(self.cache[target_file]) == 2:
+                target_data, target_mask = self.cache[target_file]
+            else:
+                target_data = self.cache[target_file]
+                target_mask = None
         else:
-            target_data, _ = load_tif_file(target_file)
-            self.cache[target_file] = target_data
+            if self.region_mask is not None:
+                target_data, target_mask, _ = load_tif_file(target_file, normalize=True, preserve_mask=True)
+                # Combine with region mask if available
+                target_mask = np.logical_and(target_mask, self.region_mask) if target_mask is not None else self.region_mask
+                self.cache[target_file] = (target_data, target_mask)
+            else:
+                target_data, _ = load_tif_file(target_file, normalize=True)
+                target_mask = None
+        
+        # Update combined mask with target mask
+        if target_mask is not None:
+            if combined_mask is not None:
+                combined_mask = np.logical_and(combined_mask, target_mask)
+            else:
+                combined_mask = target_mask
         
         # Resize data if input_size is specified
         if self.input_size:
@@ -205,6 +266,11 @@ class XCO2SequenceDataset(Dataset):
             # Resize target
             target_data = resize(target_data, self.input_size, 
                                  preserve_range=True, anti_aliasing=True)
+            
+            # Resize mask if it exists
+            if combined_mask is not None:
+                combined_mask = resize(combined_mask.astype(np.float32), self.input_size, 
+                                       preserve_range=True, anti_aliasing=False) > 0.5
         
         # Apply transforms if specified
         if self.transform:
@@ -215,23 +281,29 @@ class XCO2SequenceDataset(Dataset):
         X = torch.tensor(X, dtype=torch.float32)
         y = torch.tensor(target_data, dtype=torch.float32).unsqueeze(0)  # Add channel dim
         
-        return X, y
+        # Include mask in return if we have one
+        if combined_mask is not None:
+            mask_tensor = torch.tensor(combined_mask, dtype=torch.bool)
+            return X, y, mask_tensor
+        else:
+            return X, y
 
 def get_dataloaders(root_dir, sequence_length, batch_size=8, val_split=0.2, input_size=None,
-                    years_range=None, pattern="*_XGBOOST_XCO2.tif"):
+                    years_range=None, pattern="*_XGBOOST_XCO2.tif", mask_file=None):
     """
-    Create dataloaders for training and validation.
+    创建训练和验证的数据加载器
     
-    Args:
-        root_dir (str): Directory containing XCO2 TIF files
-        sequence_length (int): Length of sequences to create
-        batch_size (int): Batch size for dataloaders
-        val_split (float): Fraction of data to use for validation
-        input_size (tuple): Optional (height, width) to resize inputs
-        years_range (tuple): Optional tuple of (start_year, end_year) to filter files
-        pattern (str): File pattern to match
+    参数:
+        root_dir (str): 包含 XCO2 TIF 文件的目录
+        sequence_length (int): 要创建的序列长度
+        batch_size (int): 数据加载器的批量大小
+        val_split (float): 用于验证的数据比例
+        input_size (tuple): 可选的 (height, width) 用于调整输入大小
+        years_range (tuple): 可选的 (start_year, end_year) 元组用于过滤文件
+        pattern (str): 匹配的文件模式
+        mask_file (str): 可选的掩膜文件路径，用于定义有效区域
         
-    Returns:
+    返回:
         tuple: (train_loader, val_loader)
     """
     # List and sort files
@@ -249,26 +321,26 @@ def get_dataloaders(root_dir, sequence_length, batch_size=8, val_split=0.2, inpu
     val_sequences = sequences[-val_size:] if val_size > 0 else []
     
     # Create datasets
-    train_dataset = XCO2SequenceDataset(train_sequences, input_size=input_size)
-    val_dataset = XCO2SequenceDataset(val_sequences, input_size=input_size) if val_sequences else None
+    train_dataset = XCO2SequenceDataset(train_sequences, input_size=input_size, mask_file=mask_file)
+    val_dataset = XCO2SequenceDataset(val_sequences, input_size=input_size, mask_file=mask_file) if val_sequences else None
     
     # Create dataloaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size) if val_dataset else None
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=2, pin_memory=True) if val_dataset else None
     
     return train_loader, val_loader
 
 def create_auxiliary_input(xco2_file, auxiliary_dirs, auxiliary_patterns=None):
     """
-    Create auxiliary input features to complement XCO2 data.
+    创建辅助输入特征以补充 XCO2 数据
     
-    Args:
-        xco2_file (str): Path to XCO2 TIF file
-        auxiliary_dirs (dict): Dictionary mapping feature names to directories
-        auxiliary_patterns (dict): Optional dictionary mapping feature names to file patterns
+    参数:
+        xco2_file (str): XCO2 TIF 文件路径
+        auxiliary_dirs (dict): 特征名称到目录的映射字典
+        auxiliary_patterns (dict): 可选的特征名称到文件模式的映射字典
         
-    Returns:
-        numpy.ndarray: Array with shape [channels, height, width] containing auxiliary data
+    返回:
+        numpy.ndarray: 形状为 [channels, height, width] 的数组，包含辅助数据
     """
     # Initialize auxiliary_patterns to empty dict if None
     if auxiliary_patterns is None:
@@ -341,9 +413,11 @@ def create_auxiliary_input(xco2_file, auxiliary_dirs, auxiliary_patterns=None):
 
 class XCO2WithAuxDataset(Dataset):
     """
-    Dataset for XCO2 sequences with auxiliary data.
+    带有辅助数据的 XCO2 序列数据集
+    
+    类似于 XCO2SequenceDataset，但加入了辅助特征
     """
-    def __init__(self, sequences, auxiliary_dirs, target_files=None, input_size=None, transform=None):
+    def __init__(self, sequences, auxiliary_dirs, target_files=None, input_size=None, transform=None, mask_file=None):
         """
         Initialize the dataset.
         
@@ -353,15 +427,24 @@ class XCO2WithAuxDataset(Dataset):
             target_files (list): Optional list of target file paths
             input_size (tuple): Optional (height, width) to resize inputs
             transform: Optional transform to apply to loaded data
+            mask_file (str): Optional path to a mask file defining valid regions
         """
         self.sequences = sequences
         self.auxiliary_dirs = auxiliary_dirs
         self.target_files = target_files
         self.input_size = input_size
         self.transform = transform
+        self.mask_file = mask_file
         
         # Cache for loaded data
         self.cache = {}
+        
+        # Load mask if provided
+        self.region_mask = None
+        if mask_file is not None and os.path.exists(mask_file):
+            with rasterio.open(mask_file) as src:
+                mask_data = src.read(1)
+                self.region_mask = mask_data == 1  # 值为1的区域被视为有效
     
     def __len__(self):
         return len(self.sequences)
@@ -371,13 +454,24 @@ class XCO2WithAuxDataset(Dataset):
         
         # Load sequence data with auxiliary features
         sequence_data = []
+        sequence_masks = []
         for file_path in sequence:
             cache_key = file_path
             if cache_key in self.cache:
-                combined_data = self.cache[cache_key]
+                if isinstance(self.cache[cache_key], tuple) and len(self.cache[cache_key]) == 2:
+                    combined_data, mask = self.cache[cache_key]
+                else:
+                    combined_data = self.cache[cache_key]
+                    mask = None
             else:
-                # Load XCO2 data
-                xco2_data, _ = load_tif_file(file_path)
+                # Load XCO2 data with mask if region mask is provided
+                if self.region_mask is not None:
+                    xco2_data, xco2_mask, _ = load_tif_file(file_path, normalize=True, preserve_mask=True)
+                    # Combine with region mask
+                    mask = np.logical_and(xco2_mask, self.region_mask) if xco2_mask is not None else self.region_mask
+                else:
+                    xco2_data, _ = load_tif_file(file_path, normalize=True)
+                    mask = None
                 
                 # Load auxiliary data
                 aux_data = create_auxiliary_input(file_path, self.auxiliary_dirs)
@@ -386,12 +480,22 @@ class XCO2WithAuxDataset(Dataset):
                 xco2_data = xco2_data[np.newaxis, :, :]  # Add channel dimension
                 combined_data = np.concatenate([xco2_data, aux_data], axis=0)
                 
-                self.cache[cache_key] = combined_data
+                if mask is not None:
+                    self.cache[cache_key] = (combined_data, mask)
+                else:
+                    self.cache[cache_key] = combined_data
             
             sequence_data.append(combined_data)
+            if mask is not None:
+                sequence_masks.append(mask)
         
         # Stack into a single array [sequence_length, channels, height, width]
         X = np.stack(sequence_data)
+        
+        # Create combined mask if we have masks
+        combined_mask = None
+        if sequence_masks:
+            combined_mask = np.logical_and.reduce(sequence_masks)
         
         # Determine target (y)
         if self.target_files is not None:
@@ -413,11 +517,34 @@ class XCO2WithAuxDataset(Dataset):
                 target_file = last_file
         
         # Load target data
-        if target_file in self.cache and isinstance(self.cache[target_file], np.ndarray) and self.cache[target_file].ndim == 3:
-            # If we have cached the combined data, extract just the XCO2 channel
-            target_data = self.cache[target_file][0]
+        if target_file in self.cache and (isinstance(self.cache[target_file], tuple) or self.cache[target_file].ndim == 3):
+            # If we have cached the combined data
+            if isinstance(self.cache[target_file], tuple) and len(self.cache[target_file]) == 2:
+                combined_target, target_mask = self.cache[target_file]
+                if combined_target.ndim == 3:  # If it's the full auxiliary data
+                    target_data = combined_target[0]  # Extract just the XCO2 channel
+                else:
+                    target_data = combined_target
+            else:
+                combined_target = self.cache[target_file]
+                target_data = combined_target[0] if combined_target.ndim == 3 else combined_target
+                target_mask = None
         else:
-            target_data, _ = load_tif_file(target_file)
+            # Load target data with mask if region mask is provided
+            if self.region_mask is not None:
+                target_data, target_mask, _ = load_tif_file(target_file, normalize=True, preserve_mask=True)
+                # Combine with region mask
+                target_mask = np.logical_and(target_mask, self.region_mask) if target_mask is not None else self.region_mask
+            else:
+                target_data, _ = load_tif_file(target_file, normalize=True)
+                target_mask = None
+        
+        # Update combined mask with target mask
+        if target_mask is not None:
+            if combined_mask is not None:
+                combined_mask = np.logical_and(combined_mask, target_mask)
+            else:
+                combined_mask = target_mask
         
         # Resize data if input_size is specified
         if self.input_size:
@@ -434,6 +561,11 @@ class XCO2WithAuxDataset(Dataset):
             # Resize target
             target_data = resize(target_data, self.input_size, 
                                 preserve_range=True, anti_aliasing=True)
+            
+            # Resize mask if it exists
+            if combined_mask is not None:
+                combined_mask = resize(combined_mask.astype(np.float32), self.input_size, 
+                                       preserve_range=True, anti_aliasing=False) > 0.5
         
         # Apply transforms if specified
         if self.transform:
@@ -444,4 +576,9 @@ class XCO2WithAuxDataset(Dataset):
         X = torch.tensor(X, dtype=torch.float32)
         y = torch.tensor(target_data, dtype=torch.float32).unsqueeze(0)  # Add channel dim
         
-        return X, y 
+        # Include mask in return if we have one
+        if combined_mask is not None:
+            mask_tensor = torch.tensor(combined_mask, dtype=torch.bool)
+            return X, y, mask_tensor
+        else:
+            return X, y 

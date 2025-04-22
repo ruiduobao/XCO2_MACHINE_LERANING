@@ -1,3 +1,18 @@
+训练代码：
+python train.py --data_dir "E:\地理所\论文\中国XCO2论文_2025.04\数据\XGBOOST_XCO2" --sequence_length 3 --hidden_dims 32 64 --aux_data --batch_size 2 --epochs 50 --output_dir ./results --experiment_name xco2_convlstm_6month
+记得删掉有一些不重要的特征，加快收敛速度
+
+预测代码：
+python predict_2018.py --sequence_length 3 --start_date 2018-03 --output_dir "./2018预测结果" --num_steps 9 --visualize
+
+
+考虑了空值的训练代码：
+python train.py --data_dir "E:\地理所\论文\中国XCO2论文_2025.04\数据\XGBOOST_XCO2" --sequence_length 3 --batch_size 2 --epochs 2 --output_dir "./results" --experiment_name "convlstm_china_only" --aux_data 
+考虑了空值的预测代码：
+python predict_aux.py --model_path "E:\地理所\论文\中国XCO2论文_2025.04\代码\step6_convlstm\已训练模型\best_xco2_convlstm_model.pth" --data_dir "E:\地理所\论文\中国XCO2论文_2025.04\数据\XGBOOST_XCO2" --sequence_length 3 --start_date "2018-01" --num_steps 12 --output_dir "./predictions_2018_with_aux" --visualize
+
+
+
 # ConvLSTM for XCO2 Spatio-Temporal Prediction
 
 This module implements a Convolutional LSTM (ConvLSTM) model for spatio-temporal prediction of XCO2 concentrations. The model can capture both spatial and temporal correlations in the data to make accurate future predictions.

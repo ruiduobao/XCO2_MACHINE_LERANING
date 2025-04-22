@@ -15,7 +15,11 @@ from datetime import datetime
 from matplotlib.colors import Normalize
 
 def parse_args():
-    """Parse command line arguments."""
+    """
+    解析命令行参数
+    
+    包含数据目录、文件模式、输出路径、动画参数等
+    """
     parser = argparse.ArgumentParser(description='Create animation of XCO2 predictions')
     
     parser.add_argument('--data_dir', type=str, required=True,
@@ -45,13 +49,13 @@ def parse_args():
 
 def extract_date_from_filename(filename):
     """
-    Extract date from filename with format YYYY_MM_*.tif or similar.
+    从格式为 YYYY_MM_*.tif 或类似格式的文件名中提取日期
     
-    Args:
-        filename (str): Filename to extract date from
+    参数:
+        filename (str): 要提取日期的文件名
         
-    Returns:
-        datetime.datetime: Extracted date, or None if not found
+    返回:
+        datetime.datetime: 提取的日期，如果未找到则为 None
     """
     # Extract year and month using regex
     match = re.search(r'(\d{4})_(\d{1,2})', os.path.basename(filename))
@@ -62,15 +66,15 @@ def extract_date_from_filename(filename):
 
 def load_tif_files(data_dir, pattern='*.tif', sort_by_date=False):
     """
-    Load all TIF files matching the pattern from the directory.
+    从目录加载所有匹配模式的 TIF 文件
     
-    Args:
-        data_dir (str): Directory containing TIF files
-        pattern (str): Glob pattern to match files
-        sort_by_date (bool): Whether to sort files by date extracted from filename
+    参数:
+        data_dir (str): 包含 TIF 文件的目录
+        pattern (str): 匹配文件的 glob 模式
+        sort_by_date (bool): 是否按从文件名中提取的日期排序
         
-    Returns:
-        tuple: (data_list, metadata_list) arrays and metadata for each file
+    返回:
+        tuple: (data_list, metadata_list) 每个文件的数组和元数据
     """
     # Find all files matching the pattern
     file_paths = glob(os.path.join(data_dir, pattern))
@@ -125,19 +129,19 @@ def create_animation(data_list, metadata_list, output_path, fps=2, dpi=150,
                      figsize=(10, 8), cmap='viridis', vmin=None, vmax=None, 
                      title_prefix='XCO2 Prediction:'):
     """
-    Create animation from a list of arrays.
+    从数组列表创建动画
     
-    Args:
-        data_list (list): List of 2D arrays to animate
-        metadata_list (list): List of metadata dictionaries for each array
-        output_path (str): Path to save the animation
-        fps (int): Frames per second
-        dpi (int): DPI for the animation
-        figsize (tuple): Figure size in inches
-        cmap (str): Colormap to use
-        vmin (float): Minimum value for colormap normalization
-        vmax (float): Maximum value for colormap normalization
-        title_prefix (str): Prefix for frame titles
+    参数:
+        data_list (list): 要动画化的 2D 数组列表
+        metadata_list (list): 每个数组的元数据字典列表
+        output_path (str): 保存动画的路径
+        fps (int): 每秒帧数
+        dpi (int): 动画的 DPI
+        figsize (tuple): 图形大小（英寸）
+        cmap (str): 使用的颜色映射
+        vmin (float): 颜色映射归一化的最小值
+        vmax (float): 颜色映射归一化的最大值
+        title_prefix (str): 帧标题的前缀
     """
     # Calculate global min/max if not provided
     if vmin is None or vmax is None:
@@ -187,7 +191,15 @@ def create_animation(data_list, metadata_list, output_path, fps=2, dpi=150,
     print(f"Animation saved to {output_path}")
 
 def main():
-    """Main function."""
+    """
+    主函数
+    
+    处理流程:
+    1. 解析命令行参数
+    2. 加载 TIF 文件
+    3. 创建输出目录（如果不存在）
+    4. 创建动画
+    """
     # Parse command line arguments
     args = parse_args()
     

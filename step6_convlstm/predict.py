@@ -67,22 +67,22 @@ def setup_auxiliary_data_dirs():
     aux_dirs = {
         'Lantitude': os.path.join(root_dir, '纬度栅格'),
         'Longtitude': os.path.join(root_dir, '经度栅格'),
-        'UnixTime': os.path.join(root_dir, '每月时间戳的栅格数据'),
-        'aspect': os.path.join(root_dir, '坡向数据'),
-        'slope': os.path.join(root_dir, '坡度数据'),
-        'DEM': os.path.join(root_dir, 'DEM'),
-        'VIIRS': os.path.join(root_dir, '夜光遥感'),
+        # 'UnixTime': os.path.join(root_dir, '每月时间戳的栅格数据'),
+        # 'aspect': os.path.join(root_dir, '坡向数据'),
+        # 'slope': os.path.join(root_dir, '坡度数据'),
+        # 'DEM': os.path.join(root_dir, 'DEM'),
+        # 'VIIRS': os.path.join(root_dir, '夜光遥感'),
         'ERA5Land': os.path.join(root_dir, 'ERA5'),
-        'AOD': os.path.join(root_dir, '气溶胶厚度'),
+        # 'AOD': os.path.join(root_dir, '气溶胶厚度'),
         'CT2019B': os.path.join(root_dir, 'carbon_tracer'),
         'landscan': os.path.join(root_dir, 'landscan'),
-        'odiac1km': os.path.join(root_dir, 'odiac'),
-        'humanfootprint': os.path.join(root_dir, '人类足迹数据'),
+        # 'odiac1km': os.path.join(root_dir, 'odiac'),
+        # 'humanfootprint': os.path.join(root_dir, '人类足迹数据'),
         'OCO2GEOS': os.path.join(root_dir, 'OCO2_GEOS_XCO2同化数据'),
         'CAMStcco2': os.path.join(root_dir, 'CAMS'),
-        'CLCD': os.path.join(root_dir, 'CLCD'),
+        # 'CLCD': os.path.join(root_dir, 'CLCD'),
         'MODISLANDCOVER': os.path.join(root_dir, 'modis_landcover'),
-        'MOD13A2': os.path.join(root_dir, 'NDVI')
+        # 'MOD13A2': os.path.join(root_dir, 'NDVI')
     }
     
     return aux_dirs
